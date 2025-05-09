@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from simulation import simulate
+from src.simulation import simulate
 
 st.set_page_config(page_title="Customer Simulation", layout="wide")
 st.title("🧪 Customer Arrival and Reneging Simulation")
