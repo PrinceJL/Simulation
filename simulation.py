@@ -14,7 +14,7 @@ def simulate(data, log_list):
         log_list.append({
             "Time": f"{env.now:.0f}s",
             "Commuter": name,
-            "Action": f"arrives"
+            "Action": "arrives"
         })
 
         with counter.request() as req:
@@ -30,7 +30,7 @@ def simulate(data, log_list):
                 log_list.append({
                     "Time": f"{env.now:.0f}s",
                     "Commuter": name,
-                    "Action": f"leaves after service"
+                    "Action": "leaves after service"
                 })
             else:
                 log_list.append({
