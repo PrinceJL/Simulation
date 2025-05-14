@@ -1,48 +1,63 @@
 import streamlit as st
 import pandas as pd
-import simpy
-from simulation import simulate_gate2
+from simulation.customer import generate_customer_data
+from simulation.jeepney import generate_jeepney_data
 
-st.set_page_config(page_title="Jeepney and Customer Simulation", layout="wide")
-st.title("🚗 Jeepney and Customer Simulation at Gate 2")
+st.set_page_config(page_title="Jeepney-Customer Simulation", layout="wide")
+st.title("🚌 Jeepney and Customer Simulation with Replications")
 
-# Load the customer and jeepney data from Google Sheets
-CSV_URL_CUSTOMER = "https://docs.google.com/spreadsheets/d/1q5VdeoHnj1UMFGm781BDCEsNcWncX72UOlDOQrKTEgY/export?format=csv&gid=0"
-CSV_URL_JEEPNEY = "https://docs.google.com/spreadsheets/d/1q5VdeoHnj1UMFGm781BDCEsNcWncX72UOlDOQrKTEgY/export?format=csv&gid=1621107266"  # Update as needed
+# Sidebar configuration
+st.sidebar.header("Simulation Settings")
+num_groups = st.sidebar.slider("Customer Groups", 10, 100, 50)
+num_jeeps = st.sidebar.slider("Jeepneys", 10, 100, 30)
+replications = st.sidebar.slider("Replications", 1, 10, 3)
 
-try:
-    customer_data = pd.read_csv(CSV_URL_CUSTOMER)
-    jeepney_data = pd.read_csv(CSV_URL_JEEPNEY)
-    st.session_state.customer_data = customer_data
-    st.session_state.jeepney_data = jeepney_data
-except Exception as e:
-    st.error("Failed to load data from Google Sheets.")
-    st.stop()
+# Run simulations
+customer_runs = []
+jeepney_runs = []
+for i in range(replications):
+    customer_runs.append(generate_customer_data(num_groups=num_groups, seed=42+i))
+    jeepney_runs.append(generate_jeepney_data(num_jeeps=num_jeeps, seed=99+i))
 
-# Editable table for customer data
-st.subheader("📋 Edit Customer Data")
-customer_data = st.data_editor(st.session_state.customer_data, num_rows="dynamic", key="customer_editor")
+# Compute metrics
+def compute_metrics():
+    total_arrived, total_reneged, total_wait, total_boarded, total_util = 0, 0, 0, 0, 0
 
-# Editable table for jeepney data
-st.subheader("📋 Edit Jeepney Data")
-jeepney_data = st.data_editor(st.session_state.jeepney_data, num_rows="dynamic", key="jeepney_editor")
+    for cust_df, jeep_df in zip(customer_runs, jeepney_runs):
+        total_arrived += cust_df["No of Customer Arrived"].sum()
+        total_reneged += cust_df["No of Reneged"].sum()
+        total_wait += cust_df["Avg Wait Time (mins)"].mean()
+        total_boarded += jeep_df["Number of Passengers Boarded"].sum()
+        total_util += jeep_df["Utilization"].mean()
 
-# Initialize the SimPy environment
-env = simpy.Environment()
+    return {
+        "Avg Total Arrived": total_arrived // replications,
+        "Avg Reneged": total_reneged // replications,
+        "Avg Reneging Rate (%)": round((total_reneged / total_arrived) * 100, 2),
+        "Avg Wait Time (mins)": round(total_wait / replications, 2),
+        "Avg Jeepney Boarded": total_boarded // replications,
+        "Avg Jeepney Utilization": round(total_util / replications, 2)
+    }
 
-# Run the simulation
-log_list = []  # Initialize log list
-if st.button("🚦 Run Simulation"):
-    # Call the simulate_gate2 function with the SimPy environment and data
-    simulate_gate2(env, customer_data, jeepney_data, log_list)
+metrics = compute_metrics()
 
-    # Display logs from the simulation
-    st.subheader("📜 Simulation Log")
-    for line in log_list:
-        st.text(line)
+# Display metrics
+st.subheader("📊 Aggregated Metrics Across Replications")
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Customers Arrived", metrics["Avg Total Arrived"])
+col1.metric("Total Reneged", metrics["Avg Reneged"])
+col2.metric("Avg Wait Time", f"{metrics['Avg Wait Time (mins)']} mins")
+col2.metric("Reneging Rate", f"{metrics['Avg Reneging Rate (%)']}%")
+col3.metric("Total Boarded", metrics["Avg Jeepney Boarded"])
+col3.metric("Jeepney Utilization", f"{metrics['Avg Jeepney Utilization']}")
 
-# Optional save locally for customer and jeepney data
-if st.button("💾 Save Edited Data as CSV"):
-    customer_data.to_csv("edited_customer_data.csv", index=False)
-    jeepney_data.to_csv("edited_jeepney_data.csv", index=False)
-    st.success("Saved as edited_customer_data.csv and edited_jeepney_data.csv")
+# --- 🔄 NEW: Replication selector ---
+st.subheader("📑 View Individual Replication Details")
+selected_replication = st.selectbox("Select replication run:", range(1, replications+1), index=0)
+rep_index = selected_replication - 1
+
+st.markdown(f"### 👥 Customer Arrivals (Replication {selected_replication})")
+st.dataframe(customer_runs[rep_index])
+
+st.markdown(f"### 🛺 Jeepney Arrivals (Replication {selected_replication})")
+st.dataframe(jeepney_runs[rep_index])
