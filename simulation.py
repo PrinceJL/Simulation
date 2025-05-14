@@ -1,54 +1,57 @@
 import simpy
 import random
+import pandas as pd
 
-def to_seconds(tstr):
-    m, s = map(int, tstr.split(":"))
-    return m * 60 + s
+# -- Configuration --
+MAX_CAPACITY = 30  # default jeepney capacity if not specified
 
-def simulate(data, log_list):
-    env = simpy.Environment()
-    counter = simpy.Resource(env, capacity=1)
+# Convert time string ("MM:SS") to seconds
+def time_to_seconds(time_str):
+    try:
+        hours, minutes = map(int, time_str.split(':'))
+        return hours * 3600 + minutes * 60  # Convert to seconds
+    except ValueError:
+        print(f"Invalid time format: {time_str}")
+        return 0  # or handle it differently as needed
+# Simulation logic
+def simulate_gate2(env, customer_data, jeepney_data, log_list):
+    queue = []  # waiting customers
 
-    def customer(env, name, counter, patience):
-        arrival = env.now
-        log_list.append({
-            "Time": f"{env.now:.0f}s",
-            "Commuter": name,
-            "Action": "arrives"
-        })
-
-        with counter.request() as req:
-            result = yield req | env.timeout(patience)
-            if req in result:
-                wait_time = env.now - arrival
-                log_list.append({
-                    "Time": f"{env.now:.0f}s",
-                    "Commuter": name,
-                    "Action": f"begins service after {wait_time:.0f}s"
-                })
-                yield env.timeout(random.uniform(30, 60))
-                log_list.append({
-                    "Time": f"{env.now:.0f}s",
-                    "Commuter": name,
-                    "Action": "leaves after service"
-                })
-            else:
-                log_list.append({
-                    "Time": f"{env.now:.0f}s",
-                    "Commuter": name,
-                    "Action": f"reneged after waiting {patience:.0f}s"
-                })
-
-    def generate_customers(env, data, counter):
-        for i, row in data.iterrows():
-            yield env.timeout(to_seconds(row['Arrival Time based on previous']))
+    def customer_generator():
+        for i, row in customer_data.iterrows():
+            yield env.timeout(time_to_seconds(row['Arrival Time based on previous']))
             for j in range(int(row['No of Customer Arrived'])):
-                name = f"Cust_{i}_{j}"
-                if j >= (int(row['No of Customer Arrived']) - int(row['No of Reneged'])):
-                    patience = random.uniform(10, 40)
-                else:
-                    patience = random.uniform(100, 300)
-                env.process(customer(env, name, counter, patience))
+                cust = {
+                    "id": f"Cust_{i}_{j}",
+                    "arrival_time": env.now,
+                    "patience": random.uniform(100, 300)
+                }
+                queue.append(cust)
+                log_list.append(f"[{env.now:.0f}s] {cust['id']} joins queue")
 
-    env.process(generate_customers(env, data, counter))
+    def jeepney_generator():
+        for i, row in jeepney_data.iterrows():
+            interarrival = row['Interarrival in mins']
+            if pd.isna(interarrival):
+                delay = 0
+            else:
+                delay = int(interarrival) * 60
+            yield env.timeout(delay)
+
+            jeep_id = row['Jeepney Plate']
+            arrives_empty = int(row.get('Jeepney arrived without passengers onboard', 1))
+            onboard_capacity = MAX_CAPACITY if arrives_empty else random.randint(0, MAX_CAPACITY - 5)
+            can_board = MAX_CAPACITY - onboard_capacity
+
+            boarded = 0
+            while queue and can_board > 0:
+                cust = queue.pop(0)
+                boarded += 1
+                can_board -= 1
+                log_list.append(f"[{env.now:.0f}s] {cust['id']} boards {jeep_id}")
+
+            log_list.append(f"[{env.now:.0f}s] {jeep_id} departs with {boarded} customers")
+
+    env.process(customer_generator())
+    env.process(jeepney_generator())
     env.run()
