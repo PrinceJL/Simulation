@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load the data (replace this with your actual data load step)
-data = pd.read_csv("https://docs.google.com/spreadsheets/d/1q5VdeoHnj1UMFGm781BDCEsNcWncX72UOlDOQrKTEgY/export?format=csv&gid=1621107266")
+data = pd.read_csv("https://docs.google.com/spreadsheets/d/19_TOfA7OPs3gYJeZwu9-EaoU4_IF4Qbi5tb-IF7dfT8/edit?gid=610931942#gid=610931942")
 
 df_jeepney = pd.DataFrame(data)
 
