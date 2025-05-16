@@ -38,7 +38,7 @@ def preprocess_data(customer_data, jeepney_data):
     }
     return customer_data, jeepney_stats
 
-# Simulation logic
+# Updated Simulation logic
 def run_simulation(customer_data, jeepney_stats, simulation_time, num_replications):
     results = []
     individual_replications = {}
@@ -95,12 +95,14 @@ def run_simulation(customer_data, jeepney_stats, simulation_time, num_replicatio
                 customers_waiting -= num_served
                 jeepney_utilization_time += num_served
 
-                # Log jeepney arrival and boarding
+                # Log jeepney arrival, boarding, and departure
                 events.append({
                     "Event": "Jeepney Arrived",
                     "Time (mins)": time,
                     "Customers Served": num_served,
                     "Customers Waiting": customers_waiting,
+                    "Jeepney Departure Time": time,  # Log departure time as the same as arrival time
+                    "Customers Boarded": num_served,
                 })
 
         # Store detailed events for this replication
