@@ -1,31 +1,30 @@
 import pandas as pd
 import numpy as np
-from datetime import timedelta
 
-def generate_jeepney_data(num_jeeps=30, seed=42):
-    np.random.seed(seed)
-    data = []
-    time_now = timedelta(minutes=0)
-    jeep_capacity = 20  # Assume 20 seats per jeep
+def jeepney_simulation():
+    # Load the data
+    data = pd.read_csv("https://docs.google.com/spreadsheets/d/1q5VdeoHnj1UMFGm781BDCEsNcWncX72UOlDOQrKTEgY/export?format=csv&gid=1621107266")
+    df_jeepney = pd.DataFrame(data)
 
-    for i in range(num_jeeps):
-        interarrival = np.random.randint(5, 15)
-        time_now += timedelta(minutes=interarrival)
-        passengers = np.random.randint(5, jeep_capacity + 1)
-        onboard = np.random.choice([0, 1])
-        stopped = np.random.choice([0, 1])
-        not_stopped = 1 - stopped
-        utilization = passengers / jeep_capacity
+    # Function to convert time in MM:SS format to minutes
+    def convert_to_minutes(time_str):
+        mins, secs = map(int, time_str.split(':'))
+        return mins + secs / 60
 
-        data.append([
-            f"J{i+1:02d}", interarrival, str(time_now)[:-3],
-            str(time_now + timedelta(minutes=2))[:-3],
-            passengers, onboard, stopped, not_stopped, round(utilization, 2)
-        ])
+    # Apply conversion
+    df_jeepney['Interarrival in mins'] = df_jeepney['Interarrival in mins'].apply(convert_to_minutes)
+    df_jeepney['Time Arrived'] = df_jeepney['Time Arrived'].apply(convert_to_minutes)
+    df_jeepney['Time Departed'] = df_jeepney['Time Departed'].apply(convert_to_minutes)
 
-    return pd.DataFrame(data, columns=[
-        "Plate Number", "Interarrival in mins", "Time Arrived", "Time Departed",
-        "Number of Passengers Boarded", "Jeepney arrived without passengers onboard",
-        "Jeepney came from phase 3 but stopped", "Jeepney came from phase 3 but did not stop",
-        "Utilization"
-    ])
+    # Interarrival Time Distribution
+    interarrival_hist, interarrival_bins = np.histogram(df_jeepney['Interarrival in mins'], bins=5, density=True)
+    interarrival_prob = interarrival_hist / interarrival_hist.sum()
+
+    # Number of Passengers Distribution
+    passenger_hist, passenger_bins = np.histogram(df_jeepney['Number of Passengers Boarded'], bins=5, density=True)
+    passenger_prob = passenger_hist / passenger_hist.sum()
+
+    # Jeepney Stopped Distribution
+    stopped_prob = df_jeepney['Jeepney came from phase 3 but stopped'].value_counts(normalize=True).sort_index()
+
+    return interarrival_prob, interarrival_bins, passenger_prob, passenger_bins, stopped_prob
