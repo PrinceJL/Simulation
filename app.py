@@ -17,7 +17,7 @@ def convert_to_minutes(time_str):
 # Load datasets
 def load_data():
     customer_data = pd.read_csv(CUSTOMER_DATA_URL)
-    jeepney_data = pd.read_csv(JEEPNEY_DATA_URL, on_bad_lines='skip', engine='python')
+    jeepney_data = pd.read_csv(JEEPNEY_DATA_URL)
     return customer_data, jeepney_data
 
 # Preprocess data to calculate probabilities and handle time conversions
