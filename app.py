@@ -2,46 +2,49 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# Simulate jeepney data
-def jeepney_simulation():
-    # Load the data
-    data = pd.read_csv("https://docs.google.com/spreadsheets/d/1q5VdeoHnj1UMFGm781BDCEsNcWncX72UOlDOQrKTEgY/export?format=csv&gid=1621107266")
-    df_jeepney = pd.DataFrame(data)
+# Load historical data from Google Sheets
+CUSTOMER_DATA_URL = "https://docs.google.com/spreadsheets/d/1cCjvCal_UaPfWVN5YUhrryQBTmOMEXBfK_sb55X0pJQ/export?format=csv&gid=0"
+JEEPNEY_DATA_URL = "https://docs.google.com/spreadsheets/d/1cCjvCal_UaPfWVN5YUhrryQBTmOMEXBfK_sb55X0pJQ/export?format=csv&gid=681560324"
 
-    # Function to convert time in MM:SS format to minutes
-    def convert_to_minutes(time_str):
+# Function to convert time strings (MM:SS) to minutes as floats
+def convert_to_minutes(time_str):
+    try:
         mins, secs = map(int, time_str.split(':'))
         return mins + secs / 60
+    except ValueError:
+        return 0  # Handle invalid or missing values gracefully
 
-    # Apply conversion
-    df_jeepney['Interarrival in mins'] = df_jeepney['Interarrival in mins'].apply(convert_to_minutes)
-    df_jeepney['Time Arrived'] = df_jeepney['Time Arrived'].apply(convert_to_minutes)
-    df_jeepney['Time Departed'] = df_jeepney['Time Departed'].apply(convert_to_minutes)
+# Load datasets
+def load_data():
+    customer_data = pd.read_csv(CUSTOMER_DATA_URL)
+    jeepney_data = pd.read_csv(JEEPNEY_DATA_URL)
+    return customer_data, jeepney_data
 
-    # Interarrival Time Distribution
-    interarrival_hist, interarrival_bins = np.histogram(df_jeepney['Interarrival in mins'], bins=5, density=True)
-    interarrival_prob = interarrival_hist / interarrival_hist.sum()
-
-    # Number of Passengers Distribution
-    passenger_hist, passenger_bins = np.histogram(df_jeepney['Number of Passengers Boarded'], bins=5, density=True)
-    passenger_prob = passenger_hist / passenger_hist.sum()
-
-    # Jeepney Stopped Distribution
-    stopped_prob = df_jeepney['Jeepney came from phase 3 but stopped'].value_counts(normalize=True).sort_index()
-
-    return interarrival_prob, interarrival_bins, passenger_prob, passenger_bins, stopped_prob
+# Preprocess data to calculate probabilities and handle time conversions
+def preprocess_data(customer_data, jeepney_data):
+    # Convert time strings to minutes
+    customer_data["Arrival Time (mins)"] = customer_data["Arrival Time (mins)"].apply(convert_to_minutes)
+    jeepney_data["Interarrival in mins"] = jeepney_data["Interarrival in mins"].apply(convert_to_minutes)
+    
+    # Calculate reneging probabilities
+    customer_data["Reneging Rate"] = customer_data["No of Reneged"] / customer_data["No of Customer Arrived"]
+    
+    # Calculate jeepney statistics
+    jeepney_stats = {
+        "interarrival_mean": jeepney_data["Interarrival in mins"].mean(),
+        "boarding_mean": jeepney_data["Number of Passengers Boarded"].mean(),
+        "stopped_prob": jeepney_data["Jeepney came from phase 3 but stopped"].mean(),
+        "no_passengers_prob": jeepney_data["Jeepney arrived without passengers onboard"].mean()
+    }
+    return customer_data, jeepney_stats
 
 # Simulation logic
-def run_simulation(customer_interarrival_time, jeepney_interarrival_time, jeepney_capacity, simulation_time, num_replications):
+def run_simulation(customer_data, jeepney_stats, simulation_time, num_replications):
     results = []
-    total_customers_arrived = 0
-    total_customers_served = 0
-    total_customers_reneged = 0
-    total_jeepneys_arrived = 0
-    total_jeepney_utilization_time = 0
+    individual_replications = {}
 
-    np.random.seed(42)  # For reproducibility
     for replication in range(num_replications):
+        np.random.seed(replication)  # Use unique seed for each replication
         time = 0
         customers_waiting = 0
         customers_served = 0
@@ -50,40 +53,60 @@ def run_simulation(customer_interarrival_time, jeepney_interarrival_time, jeepne
         jeepney_arrivals = 0
         jeepney_utilization_time = 0
 
-        while time < simulation_time:
+        # Individual replication details
+        events = []
+
+        for _, row in customer_data.iterrows():
             # Simulate customer arrival
-            interarrival_time = np.random.exponential(customer_interarrival_time)
-            time += interarrival_time
+            time += float(row["Arrival Time (mins)"])
             if time > simulation_time:
                 break
-            customers_waiting += 1
-            total_customers_arrived += 1
+            customers_arrived = int(row["No of Customer Arrived"])
+            reneging_rate = row["Reneging Rate"]
 
-            # Simulate reneging
-            reneged = np.random.rand() < 0.1  # 10% chance of reneging
-            if reneged:
-                customers_waiting -= 1
-                customers_reneged += 1
-                total_customers_reneged += 1
-                continue
+            # Simulate reneging behavior
+            for _ in range(customers_arrived):
+                if np.random.rand() < reneging_rate:
+                    customers_reneged += 1
+                else:
+                    customers_waiting += 1
 
-            # Simulate jeepney arrival
-            jeepney_arrival_time = time + np.random.exponential(jeepney_interarrival_time)
-            if jeepney_arrival_time > simulation_time:
-                break
-            jeepney_arrivals += 1
-            total_jeepneys_arrived += 1
+            # Log customer arrival
+            events.append({
+                "Event": "Customer Arrived",
+                "Time (mins)": time,
+                "Customers Arrived": customers_arrived,
+                "Reneged": customers_reneged,
+                "Customers Waiting": customers_waiting,
+            })
 
-            # Serve customers
-            if customers_waiting > 0:
-                num_served = min(customers_waiting, jeepney_capacity)
+            # Simulate jeepney arrivals and boarding
+            while customers_waiting > 0:
+                jeepney_arrivals += 1
+                interarrival_time = np.random.exponential(jeepney_stats["interarrival_mean"])
+                time += interarrival_time
+                if time > simulation_time:
+                    break
+
+                # Simulate passengers boarding
+                num_served = min(customers_waiting, np.random.poisson(jeepney_stats["boarding_mean"]))
                 customers_served += num_served
-                total_customers_served += num_served
-                total_wait_time += num_served * (jeepney_arrival_time - time)
+                total_wait_time += num_served * interarrival_time
                 customers_waiting -= num_served
                 jeepney_utilization_time += num_served
 
-        # Store results for this replication
+                # Log jeepney arrival and boarding
+                events.append({
+                    "Event": "Jeepney Arrived",
+                    "Time (mins)": time,
+                    "Customers Served": num_served,
+                    "Customers Waiting": customers_waiting,
+                })
+
+        # Store detailed events for this replication
+        individual_replications[replication + 1] = pd.DataFrame(events)
+
+        # Store aggregated results for this replication
         results.append({
             "Replication": replication + 1,
             "Customers Arrived": customers_served + customers_reneged,
@@ -91,24 +114,24 @@ def run_simulation(customer_interarrival_time, jeepney_interarrival_time, jeepne
             "Customers Reneged": customers_reneged,
             "Jeepneys Arrived": jeepney_arrivals,
             "Average Wait Time (mins)": total_wait_time / customers_served if customers_served > 0 else 0,
-            "Utilization Rate": jeepney_utilization_time / (jeepney_arrivals * jeepney_capacity) if jeepney_arrivals > 0 else 0
+            "Utilization Rate": jeepney_utilization_time / (jeepney_arrivals * jeepney_stats["boarding_mean"]) if jeepney_arrivals > 0 else 0
         })
 
     # Compute overall metrics
-    total_customers = total_customers_arrived
-    reneging_rate = total_customers_reneged / total_customers if total_customers > 0 else 0
-    jeepney_utilization_rate = total_jeepney_utilization_time / (total_jeepneys_arrived * jeepney_capacity) if total_jeepneys_arrived > 0 else 0
+    total_customers = customer_data["No of Customer Arrived"].sum()
+    reneging_rate = customer_data["No of Reneged"].sum() / total_customers if total_customers > 0 else 0
+    jeepney_utilization_rate = jeepney_utilization_time / (jeepney_arrivals * jeepney_stats["boarding_mean"]) if jeepney_arrivals > 0 else 0
 
     metrics = {
-        "Total Customers Arrived": total_customers_arrived,
-        "Total Customers Served": total_customers_served,
-        "Total Customers Reneged": total_customers_reneged,
+        "Total Customers Arrived": total_customers,
+        "Total Customers Served": customers_served,
+        "Total Customers Reneged": customers_reneged,
         "Reneging Rate": reneging_rate,
-        "Total Jeepneys Arrived": total_jeepneys_arrived,
+        "Total Jeepneys Arrived": jeepney_arrivals,
         "Jeepney Utilization Rate": jeepney_utilization_rate
     }
 
-    return pd.DataFrame(results), metrics
+    return pd.DataFrame(results), metrics, individual_replications
 
 # Streamlit App
 def main():
@@ -117,59 +140,23 @@ def main():
     # Sidebar for Simulation Parameters
     st.sidebar.header("Simulation Parameters")
     
-    # Customer Parameters
-    st.sidebar.subheader("Customer Parameters")
-    customer_interarrival_time = st.sidebar.slider("Avg Customer Interarrival Time (mins)", 1, 10, 5)
-
-    # Jeepney Parameters
-    st.sidebar.subheader("Jeepney Parameters")
-    jeepney_interarrival_time = st.sidebar.slider("Avg Jeepney Interarrival Time (mins)", 1, 15, 7)
-    jeepney_capacity = st.sidebar.slider("Jeepney Capacity", 5, 30, 15)
-
     # Simulation Parameters
     st.sidebar.subheader("Simulation Setup")
     num_replications = st.sidebar.slider("Number of Replications", 1, 50, 10)
     simulation_time = st.sidebar.slider("Total Simulation Time (mins)", 30, 240, 120)
 
-    # Run Jeepney Simulation
-    interarrival_prob, interarrival_bins, passenger_prob, passenger_bins, stopped_prob = jeepney_simulation()
+    # Load and preprocess data
+    customer_data, jeepney_data = load_data()
+    customer_data, jeepney_stats = preprocess_data(customer_data, jeepney_data)
 
     # Run the Simulation
-    results_df, metrics = run_simulation(customer_interarrival_time, jeepney_interarrival_time, jeepney_capacity, simulation_time, num_replications)
+    results_df, metrics, individual_replications = run_simulation(customer_data, jeepney_stats, simulation_time, num_replications)
 
     # Tabs for Different Views
-    tab1, tab2 = st.tabs(["Probability Tables", "Simulation Results"])
+    tab1, tab2 = st.tabs(["Simulation Results", "Detailed Replication Events"])
 
-    # Tab 1: Probability Tables
+    # Tab 1: Simulation Results
     with tab1:
-        st.subheader("Jeepney Probability Tables")
-
-        # Interarrival Time Distribution
-        interarrival_results = pd.DataFrame({
-            "Range (mins)": [f"{interarrival_bins[i]:.2f} - {interarrival_bins[i+1]:.2f}" for i in range(len(interarrival_prob))],
-            "Probability": interarrival_prob
-        })
-        st.write("**Interarrival Time Distribution (Jeepneys):**")
-        st.table(interarrival_results)
-
-        # Passenger Boarding Distribution
-        passenger_results = pd.DataFrame({
-            "Range (passengers)": [f"{passenger_bins[i]:.0f} - {passenger_bins[i+1]:.0f}" for i in range(len(passenger_prob))],
-            "Probability": passenger_prob
-        })
-        st.write("**Passenger Boarding Distribution (Jeepneys):**")
-        st.table(passenger_results)
-
-        # Jeepney Stopped Probability
-        stopped_results = pd.DataFrame({
-            "Stopped Status": ["Stopped" if index == 1 else "Not Stopped" for index in stopped_prob.index],
-            "Probability": stopped_prob.values
-        })
-        st.write("**Jeepney Stopped Probability:**")
-        st.table(stopped_results)
-
-    # Tab 2: Simulation Results
-    with tab2:
         st.subheader("Simulation Results")
 
         # Simulation Table
@@ -184,6 +171,13 @@ def main():
         st.write(f"Reneging Rate: {metrics['Reneging Rate']:.2%}")
         st.write(f"Total Jeepneys Arrived: {metrics['Total Jeepneys Arrived']}")
         st.write(f"Jeepney Utilization Rate: {metrics['Jeepney Utilization Rate']:.2%}")
+
+    # Tab 2: Detailed Replication Events
+    with tab2:
+        st.subheader("Detailed Events for Each Replication")
+        selected_replication = st.selectbox("Select Replication", options=list(individual_replications.keys()))
+        st.write(f"**Details for Replication {selected_replication}:**")
+        st.dataframe(individual_replications[selected_replication])
 
 if __name__ == "__main__":
     main()
