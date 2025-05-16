@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 
 # Load historical data from Google Sheets
-CUSTOMER_DATA_URL = "https://docs.google.com/spreadsheets/d/1cCjvCal_UaPfWVN5YUhrryQBTmOMEXBfK_sb55X0pJQ/export?format=csv&gid=0"
-JEEPNEY_DATA_URL = "https://docs.google.com/spreadsheets/d/1cCjvCal_UaPfWVN5YUhrryQBTmOMEXBfK_sb55X0pJQ/export?format=csv&gid=681560324"
+CUSTOMER_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR2FcoX9ixu9xOcXLDAnVXBXobeYLAoAR_ScodcZNW74A9B_nbgjGOATJlLAUeMEHD9IFkRHKcYSiLw/pub?gid=0&single=true&output=csv"
+JEEPNEY_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR2FcoX9ixu9xOcXLDAnVXBXobeYLAoAR_ScodcZNW74A9B_nbgjGOATJlLAUeMEHD9IFkRHKcYSiLw/pub?gid=681560324&single=true&output=csv"
 
 # Function to convert time strings (MM:SS) to minutes as floats
 def convert_to_minutes(time_str):
@@ -18,21 +18,25 @@ def convert_to_minutes(time_str):
 def load_data():
     customer_data = pd.read_csv(CUSTOMER_DATA_URL)
     jeepney_data = pd.read_csv(JEEPNEY_DATA_URL)
-
-      # Normalize column headers
-    jeepney_data.columns = jeepney_data.columns.str.strip()
-    customer_data.columns = customer_data.columns.str.strip()
-
-    # Print columns for debugging
-    print("Jeepney Columns:", jeepney_data.columns.tolist())
-    print("Customer Columns:", customer_data.columns.tolist())
-    
     return customer_data, jeepney_data
 
 # Preprocess data to calculate probabilities and handle time conversions
 def preprocess_data(customer_data, jeepney_data):
-    print("Jeepney Columns:", jeepney_data.columns.tolist())  # 🔍 SEE COLUMN NAMES
-    print("Customer Columns:", customer_data.columns.tolist())
+    # Convert time strings to minutes
+    customer_data["Arrival Time (mins)"] = customer_data["Arrival Time (mins)"].apply(convert_to_minutes)
+    jeepney_data["Interarrival in mins"] = jeepney_data["Interarrival in mins"].apply(convert_to_minutes)
+    
+    # Calculate reneging probabilities
+    customer_data["Reneging Rate"] = customer_data["No of Reneged"] / customer_data["No of Customer Arrived"]
+    
+    # Calculate jeepney statistics
+    jeepney_stats = {
+        "interarrival_mean": jeepney_data["Interarrival in mins"].mean(),
+        "boarding_mean": jeepney_data["Number of Passengers Boarded"].mean(),
+        "stopped_prob": jeepney_data["Jeepney came from phase 3 but stopped"].mean(),
+        "no_passengers_prob": jeepney_data["Jeepney arrived without passengers onboard"].mean()
+    }
+    return customer_data, jeepney_stats
 
 # Updated Simulation logic
 def run_simulation(customer_data, jeepney_stats, simulation_time, num_replications):
