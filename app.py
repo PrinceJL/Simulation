@@ -31,21 +31,8 @@ def load_data():
 
 # Preprocess data to calculate probabilities and handle time conversions
 def preprocess_data(customer_data, jeepney_data):
-    # Convert time strings to minutes
-    customer_data["Arrival Time (mins)"] = customer_data["Arrival Time (mins)"].apply(convert_to_minutes)
-    jeepney_data["Interarrival in mins"] = jeepney_data["Interarrival in mins"].apply(convert_to_minutes)
-    
-    # Calculate reneging probabilities
-    customer_data["Reneging Rate"] = customer_data["No of Reneged"] / customer_data["No of Customer Arrived"]
-    
-    # Calculate jeepney statistics
-    jeepney_stats = {
-        "interarrival_mean": jeepney_data["Interarrival in mins"].mean(),
-        "boarding_mean": jeepney_data["Number of Passengers Boarded"].mean(),
-        "stopped_prob": jeepney_data["Jeepney came from phase 3 but stopped"].mean(),
-        "no_passengers_prob": jeepney_data["Jeepney arrived without passengers onboard"].mean()
-    }
-    return customer_data, jeepney_stats
+    print("Jeepney Columns:", jeepney_data.columns.tolist())  # 🔍 SEE COLUMN NAMES
+    print("Customer Columns:", customer_data.columns.tolist())
 
 # Updated Simulation logic
 def run_simulation(customer_data, jeepney_stats, simulation_time, num_replications):
